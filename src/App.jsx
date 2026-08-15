@@ -1,201 +1,114 @@
-import React, { useState, useEffect } from 'react';
-import Navbar from './components/Navbar';
-import RoomModal from './components/room/RoomModal';
-import StationGenerator from './components/generator/StationGenerator';
-import CandidateView from './components/candidate/CandidateView';
-import ExaminerView from './components/examiner/ExaminerView';
-import ExamReportView from './components/report/ExamReportView';
-import { INITIAL_STATIONS } from './store/mockData';
-import { syncEngine, SYNC_ACTIONS } from './services/syncService';
+import { useEffect, useState } from 'react';
+import { Stethoscope, AlertTriangle } from 'lucide-react';
+import { supabase, configError } from './lib/supabase';
+import AuthGate from './components/AuthGate';
+import DoorView from './components/DoorView';
+import CoachView from './components/CoachView';
+import PracticeTab from './components/PracticeTab';
+import StationsTab from './components/StationsTab';
+import SessionsTab from './components/SessionsTab';
+import ThemeToggle from './components/ThemeToggle';
+
+const TABS = [
+  { id: 'practice', label: '演練' },
+  { id: 'stations', label: '題庫' },
+  { id: 'sessions', label: '紀錄' },
+];
 
 export default function App() {
-  // Navigation & Role State
-  const [currentView, setCurrentView] = useState('generator'); // 'generator' | 'candidate' | 'examiner' | 'report'
-  const [currentRole, setCurrentRole] = useState('EXAMINER_1'); // 'CANDIDATE' | 'EXAMINER_1' | 'EXAMINER_2' | 'EXAMINER_3'
+  // 這一關要擋在所有分支之前：三種角色都需要 Supabase。
+  if (configError) return <ConfigErrorScreen />;
 
-  // Room State
-  const [roomId, setRoomId] = useState('888999');
-  const [isRoomModalOpen, setIsRoomModalOpen] = useState(false);
+  const params = new URLSearchParams(window.location.search);
+  const joinCode = params.get('join');
+  const role = params.get('as');
 
-  // Stations State
-  const [stations, setStations] = useState(INITIAL_STATIONS);
-  const [activeStation, setActiveStation] = useState(INITIAL_STATIONS[0]);
+  // 手機門前貼紙端與陪練考官端不需要登入，也不碰資料庫。
+  // 它們只靠房間碼加入 Realtime 頻道，接收考生端廣播的狀態。
+  if (joinCode && role === 'door') return <DoorView joinCode={joinCode} />;
+  if (joinCode && role === 'coach') return <CoachView joinCode={joinCode} />;
 
-  // Exam Real-time States
-  const [timerState, setTimerState] = useState({
-    state: 'PAUSED', // 'RUNNING' | 'PAUSED'
-    secondsLeft: INITIAL_STATIONS[0].timing?.examSeconds || 480,
-    phase: 'EXAM'   // 'READING' | 'EXAM' | 'FEEDBACK'
-  });
+  return <HostApp />;
+}
 
-  const [activeCuePrompt, setActiveCuePrompt] = useState(null);
-  const [examinerScores, setExaminerScores] = useState({});
-  const [cueLog, setCueLog] = useState([]);
+function ConfigErrorScreen() {
+  return (
+    <div className="page page-narrow" style={{ paddingTop: '5rem' }}>
+      <div className="card">
+        <div className="card-title">
+          <AlertTriangle size={20} color="#a55a06" />
+          <h2>站台尚未設定完成</h2>
+        </div>
+        <p className="muted">{configError}</p>
+        <div className="notice notice-warn" style={{ marginTop: '1rem' }}>
+          到 Vercel 專案的 Settings → Environment Variables 加入這兩個值，
+          <strong>然後重新部署一次</strong>。Vite 是在建置當下把變數內嵌進檔案的，
+          只加變數而不重建，線上仍會是舊的空值。
+        </div>
+      </div>
+    </div>
+  );
+}
 
-  // Read Room ID from URL query param if present (?room=123456)
+function HostApp() {
+  const [session, setSession] = useState(undefined);
+  const [tab, setTab] = useState('practice');
+
   useEffect(() => {
-    const params = new URLSearchParams(window.location.search);
-    const roomParam = params.get('room');
-    if (roomParam) {
-      setRoomId(roomParam);
-    }
+    supabase.auth.getSession().then(({ data }) => setSession(data.session));
+    const { data: listener } = supabase.auth.onAuthStateChange((_event, next) => {
+      setSession(next);
+    });
+    return () => listener.subscription.unsubscribe();
   }, []);
 
-  // Update timer seconds when activeStation changes
-  useEffect(() => {
-    if (activeStation?.timing?.examSeconds) {
-      setTimerState(prev => ({
-        ...prev,
-        secondsLeft: activeStation.timing.examSeconds,
-        state: 'PAUSED'
-      }));
-    }
-  }, [activeStation]);
+  if (session === undefined) {
+    return <div className="empty">載入中…</div>;
+  }
 
-  // Synchronize Timer across tabs/devices
-  useEffect(() => {
-    const unsubscribe = syncEngine.subscribe((msg) => {
-      if (msg.roomId && msg.roomId !== roomId) return;
-
-      if (msg.type === SYNC_ACTIONS.TIMER_CONTROL) {
-        setTimerState(prev => ({
-          ...prev,
-          ...msg.payload
-        }));
-      } else if (msg.type === SYNC_ACTIONS.EXAMINER_SCORE_UPDATE) {
-        const { examinerId, scores, totalScore } = msg.payload;
-        setExaminerScores(prev => ({
-          ...prev,
-          [examinerId]: {
-            ...(prev[examinerId] || {}),
-            scores,
-            totalScore
-          }
-        }));
-      }
-    });
-
-    return unsubscribe;
-  }, [roomId]);
-
-  // Active Timer Countdown Interval
-  useEffect(() => {
-    let interval = null;
-    if (timerState.state === 'RUNNING') {
-      interval = setInterval(() => {
-        setTimerState(prev => {
-          if (prev.secondsLeft <= 1) {
-            clearInterval(interval);
-            return { ...prev, secondsLeft: 0, state: 'PAUSED' };
-          }
-          return { ...prev, secondsLeft: prev.secondsLeft - 1 };
-        });
-      }, 1000);
-    }
-    return () => {
-      if (interval) clearInterval(interval);
-    };
-  }, [timerState.state]);
-
-  // Handlers
-  const handleStartExamFromGenerator = () => {
-    setTimerState({
-      state: 'PAUSED',
-      secondsLeft: activeStation.timing?.examSeconds || 480,
-      phase: 'EXAM'
-    });
-    setExaminerScores({});
-    setCueLog([]);
-    setActiveCuePrompt(null);
-    setCurrentView('examiner');
-  };
-
-  const handleCompleteExam = () => {
-    setCurrentView('report');
-  };
-
-  const handleResetExam = () => {
-    setTimerState({
-      state: 'PAUSED',
-      secondsLeft: activeStation.timing?.examSeconds || 480,
-      phase: 'EXAM'
-    });
-    setExaminerScores({});
-    setCueLog([]);
-    setActiveCuePrompt(null);
-    setCurrentView('generator');
-  };
+  if (!session) return <AuthGate />;
 
   return (
-    <div className="app-container">
-      {/* Top Header Navbar */}
-      <Navbar 
-        currentView={currentView}
-        setCurrentView={setCurrentView}
-        currentRole={currentRole}
-        setCurrentRole={setCurrentRole}
-        roomId={roomId}
-        onOpenRoomModal={() => setIsRoomModalOpen(true)}
-        activeStation={activeStation}
-      />
+    <div className="shell">
+      <header className="topbar">
+        <div className="topbar-brand">
+          <Stethoscope size={22} color="#38bdf8" />
+          <div>
+            專科護理師甄審口試演練
+            <small>依 110 年度甄審口試流程及評分方式公告</small>
+          </div>
+        </div>
 
-      {/* Main View Container */}
-      <main className="main-content">
-        {currentView === 'generator' && (
-          <StationGenerator 
-            stations={stations}
-            setStations={setStations}
-            activeStation={activeStation}
-            setActiveStation={setActiveStation}
-            onStartExam={handleStartExamFromGenerator}
-          />
-        )}
+        <div className="topbar-spacer" />
 
-        {currentView === 'candidate' && (
-          <CandidateView 
-            station={activeStation}
-            timerState={timerState}
-            activeCuePrompt={activeCuePrompt}
-            setActiveCuePrompt={setActiveCuePrompt}
-            roomId={roomId}
-          />
-        )}
+        <nav className="tabs">
+          {TABS.map((item) => (
+            <button
+              key={item.id}
+              type="button"
+              className="tab"
+              aria-current={tab === item.id}
+              onClick={() => setTab(item.id)}
+            >
+              {item.label}
+            </button>
+          ))}
+        </nav>
 
-        {currentView === 'examiner' && (
-          <ExaminerView 
-            station={activeStation}
-            timerState={timerState}
-            setTimerState={setTimerState}
-            currentRole={currentRole}
-            setCurrentRole={setCurrentRole}
-            examinerScores={examinerScores}
-            setExaminerScores={setExaminerScores}
-            cueLog={cueLog}
-            setCueLog={setCueLog}
-            roomId={roomId}
-            onCompleteExam={handleCompleteExam}
-          />
-        )}
+        <ThemeToggle />
 
-        {currentView === 'report' && (
-          <ExamReportView 
-            station={activeStation}
-            examinerScores={examinerScores}
-            cueLog={cueLog}
-            onResetExam={handleResetExam}
-          />
-        )}
-      </main>
+        <button
+          type="button"
+          className="btn btn-ghost"
+          onClick={() => supabase.auth.signOut()}
+        >
+          登出
+        </button>
+      </header>
 
-      {/* Room QR Code Modal */}
-      <RoomModal 
-        isOpen={isRoomModalOpen}
-        onClose={() => setIsRoomModalOpen(false)}
-        roomId={roomId}
-        setRoomId={setRoomId}
-        currentRole={currentRole}
-        setCurrentRole={setCurrentRole}
-      />
+      {tab === 'practice' && <PracticeTab />}
+      {tab === 'stations' && <StationsTab />}
+      {tab === 'sessions' && <SessionsTab />}
     </div>
   );
 }
