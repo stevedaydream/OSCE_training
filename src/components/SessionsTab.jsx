@@ -2,7 +2,16 @@ import { useEffect, useMemo, useState } from 'react';
 import { RefreshCw, TrendingDown } from 'lucide-react';
 import { supabase, callFunction } from '../lib/supabase';
 import { CORE_CHECKLIST } from '../lib/constants';
-import { formatDate, humanDuration } from '../lib/format';
+import { formatDate, formatScore, humanDuration } from '../lib/format';
+
+const STATUS_LABEL = {
+  waiting: '未開始',
+  reading: '中斷於門前閱讀',
+  exam: '中斷於考間',
+  ended: '已結束，無逐字稿',
+  analyzed: '已分析',
+  failed: '分析失敗',
+};
 import { encodeToMp3 } from '../lib/audio';
 import { getClip } from '../lib/idb';
 import SessionReport from './SessionReport';
@@ -175,13 +184,28 @@ export default function SessionsTab() {
                   {'　·　'}
                   {session.practice_kind === 'solo' ? '自己練' : '有人陪練'}
                 </div>
+                <div className="row" style={{ gap: '0.35rem', marginTop: '0.35rem' }}>
+                  <span className={`pill ${session.status === 'analyzed' ? 'pill-ok' : 'pill-warn'}`}>
+                    {STATUS_LABEL[session.status] ?? session.status}
+                  </span>
+                  {(session.examiner_scores ?? []).length > 0 && (
+                    <span className="pill">
+                      {session.examiner_scores.map((s) => s.examinerLabel).join('、')}
+                      {session.final_score !== null && session.final_score !== undefined
+                        ? `　實得 ${formatScore(Number(session.final_score))}`
+                        : ''}
+                    </span>
+                  )}
+                </div>
               </div>
 
-              {session.status === 'analyzed' ? (
-                <button type="button" className="btn" onClick={() => setSelected(session)}>
-                  看報告
-                </button>
-              ) : (
+              {/* 報告一律可開：沒有逐字稿的場次仍可能有委員評分，
+                  只准 analyzed 才能看，等於把委員打的分數鎖在裡面拿不出來。 */}
+              <button type="button" className="btn" onClick={() => setSelected(session)}>
+                看報告
+              </button>
+
+              {session.status !== 'analyzed' && (
                 <button
                   type="button"
                   className="btn"

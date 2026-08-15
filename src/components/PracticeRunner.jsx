@@ -4,7 +4,7 @@ import { Play, Square, Unlock, Mic, MicOff, Radio } from 'lucide-react';
 import { supabase, callFunction } from '../lib/supabase';
 import { EVENTS, joinChannel, send } from '../lib/realtime';
 import { CORE_CHECKLIST, PHASES, PHASE_LABEL } from '../lib/constants';
-import { mmss } from '../lib/format';
+import { mmss, officialAverage } from '../lib/format';
 import { broadcastAlert, ring } from '../lib/sound';
 import { encodeToMp3, startRecording } from '../lib/audio';
 import { saveClip } from '../lib/idb';
@@ -78,6 +78,8 @@ export default function PracticeRunner({ session, onExit }) {
     remaining,
     running,
     alertSeconds: timing.alertSeconds,
+    // 考官端用它把配分比例換算成各段的參考配時
+    examSeconds: timing.examSeconds,
     stationTitle: station.title,
     doorSheet: station.door_sheet ?? {},
     cueCards: cueCards.map(({ id, label, title, category, peItem }) => ({
@@ -149,6 +151,10 @@ export default function PracticeRunner({ session, onExit }) {
     return () => clearInterval(id);
   }, [phase, running, reveals.length, broadcastState]);
 
+  /** 公告一、(六)：2 位委員評分總和之平均，第 3 位小數無條件捨去。 */
+  const scoreOf = (entries) =>
+    entries.length ? officialAverage(entries.map((s) => Number(s.total))) : null;
+
   const finish = useCallback(async () => {
     if (finishingRef.current) return;
     finishingRef.current = true;
@@ -215,10 +221,20 @@ export default function PracticeRunner({ session, onExit }) {
             analysis: result,
             cue_reveals: revealsRef.current,
             examiner_scores: examinerScores,
+            final_score: scoreOf(examinerScores),
           })
           .eq('id', session.id);
 
-        setFinished({ ...session, duration_seconds: durationSeconds, analysis: result, transcript: result.transcript, cue_reveals: revealsRef.current, examiner_scores: examinerScores });
+        setFinished({
+          ...session,
+          status: 'analyzed',
+          duration_seconds: durationSeconds,
+          analysis: result,
+          transcript: result.transcript,
+          cue_reveals: revealsRef.current,
+          examiner_scores: examinerScores,
+          final_score: scoreOf(examinerScores),
+        });
         setStage('done');
       } else {
         await supabase
@@ -244,6 +260,7 @@ export default function PracticeRunner({ session, onExit }) {
           duration_seconds: durationSeconds,
           cue_reveals: revealsRef.current,
           examiner_scores: examinerScores,
+          final_score: scoreOf(examinerScores),
         })
         .eq('id', session.id);
       setError(err.message);
@@ -318,6 +335,27 @@ export default function PracticeRunner({ session, onExit }) {
     listenerRef.current?.stop();
     recorderRef.current?.stop();
   }, []);
+
+  /**
+   * 委員多半在鈴響之後才把分數打完。
+   * 結束後這個元件並沒有卸載（報告就掛在它底下），Realtime 頻道也還開著，
+   * 所以晚到的評分要即時寫回資料庫並反映到已經顯示出來的報告上。
+   * 少了這一段，只要考生按下結束，之後送的分數就永遠遺失。
+   */
+  useEffect(() => {
+    if (phase !== PHASES.ENDED || examinerScores.length === 0) return;
+
+    const finalScore = officialAverage(examinerScores.map((s) => Number(s.total)));
+
+    supabase
+      .from('sessions')
+      .update({ examiner_scores: examinerScores, final_score: finalScore })
+      .eq('id', session.id)
+      .then(() => {
+        setFinished((prev) =>
+          (prev ? { ...prev, examiner_scores: examinerScores, final_score: finalScore } : prev));
+      });
+  }, [examinerScores, phase, session.id]);
 
   function start() {
     setPhase(PHASES.READING);

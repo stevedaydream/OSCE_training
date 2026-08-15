@@ -3,6 +3,12 @@ import { ArrowLeft, Info } from 'lucide-react';
 import { CORE_CHECKLIST, CORE_CATEGORIES, PASSING_SCORE } from '../lib/constants';
 import { formatScore, humanDuration, mmss, officialAverage } from '../lib/format';
 
+const LEVEL_LABEL = {
+  full: '完全做到',
+  partial: '部分做到',
+  none: '未做到',
+};
+
 function CheckRow({ label, met, evidence, note, atSeconds }) {
   return (
     <div className="check-row">
@@ -42,6 +48,7 @@ export default function SessionReport({ session, onBack }) {
     (f) => f.statedPurpose && f.statedItem && f.statedSite,
   ).length;
 
+  const hasAnalysis = Boolean(session.analysis);
   const scores = session.examiner_scores ?? [];
   const officialScore = scores.length
     ? officialAverage(scores.map((s) => Number(s.total)))
@@ -72,11 +79,26 @@ export default function SessionReport({ session, onBack }) {
           <Info size={14} style={{ verticalAlign: '-2px', marginRight: '0.35rem' }} />
           這份報告只驗證<strong>你說了什麼</strong>。純錄音無法得知你的手做了什麼，
           所以「做了卻沒說」這一類失分，這裡永遠抓不到——但那正好也是口試委員聽不到的部分。
-          報告刻意不含分數：公告未規定細項配分，任何由 AI 生出的分數對「會不會過」沒有預測力。
+          逐字稿檢核刻意不含分數：公告未規定細項配分，任何由 AI 生出的分數對「會不會過」沒有預測力。
+          下方若有分數，那是陪練委員本人打的。
         </div>
       </div>
 
+      {!hasAnalysis && (
+        <div className="card">
+          <div className="card-title">
+            <h3>這一場沒有逐字稿分析</h3>
+          </div>
+          <p className="muted">
+            可能是沒有錄到音、或分析失敗。若錄音還在這台電腦上（只保留最近 20 場），
+            可以回「紀錄」分頁按「重試分析」。
+            {scores.length > 0 && ' 委員的評分不受影響，仍然完整保留在下方。'}
+          </p>
+        </div>
+      )}
+
       {/* 說做合一是核心考點，放在最前面 */}
+      {hasAnalysis && (
       <div className="card">
         <div className="card-title">
           <h3>說做合一</h3>
@@ -118,7 +140,9 @@ export default function SessionReport({ session, onBack }) {
           </>
         )}
       </div>
+      )}
 
+      {hasAnalysis && (
       <div className="card">
         <div className="card-title">
           <h3>通用骨架檢核</h3>
@@ -143,6 +167,7 @@ export default function SessionReport({ session, onBack }) {
           </div>
         ))}
       </div>
+      )}
 
       {(analysis.stationChecks ?? []).length > 0 && (
         <div className="card">
@@ -218,22 +243,50 @@ export default function SessionReport({ session, onBack }) {
             <h3>口試委員評分</h3>
             <span className="hint">公告一、(六)：2 位委員評分總和之平均，第 3 位小數無條件捨去</span>
           </div>
-          {scores.map((entry) => (
-            <p className="muted" key={entry.examinerLabel}>
-              {entry.examinerLabel}：{entry.total} 分
-            </p>
-          ))}
-          <p style={{ fontSize: '1.4rem', fontWeight: 800, marginTop: '0.75rem' }}>
+
+          <p style={{ fontSize: '1.5rem', fontWeight: 800 }}>
             實得成績 {formatScore(officialScore)}
-            <span className={`pill ${officialScore >= PASSING_SCORE ? 'pill-ok' : 'pill-danger'}`} style={{ marginLeft: '0.6rem' }}>
+            <span
+              className={`pill ${officialScore >= PASSING_SCORE ? 'pill-ok' : 'pill-danger'}`}
+              style={{ marginLeft: '0.6rem' }}
+            >
               {officialScore >= PASSING_SCORE ? '及格' : '未達 60.00'}
             </span>
           </p>
+
           {scores.length < 2 && (
-            <p className="faint">
+            <p className="faint" style={{ marginTop: '0.3rem' }}>
               公告的算式是 2 位委員的平均，本場只有 {scores.length} 位評分，這個數字僅供參考。
             </p>
           )}
+
+          {scores.map((entry) => (
+            <div className="check-group" key={entry.examinerLabel}>
+              <h3>
+                {entry.examinerLabel}　{entry.total} 分
+                {entry.markedCount !== undefined && (
+                  <span className="faint">　（已評 {entry.markedCount} / {entry.itemCount} 項）</span>
+                )}
+              </h3>
+
+              {Object.entries(entry.items ?? {}).map(([itemId, mark]) => (
+                <div className="check-row" key={itemId}>
+                  <span className={`check-mark ${mark.level === 'full' ? 'met' : 'missed'}`}>
+                    {mark.points ?? '—'}
+                  </span>
+                  <div className="check-body">
+                    <strong>{mark.title || itemId}</strong>
+                    <div className="faint">
+                      {mark.category}
+                      {'　·　'}
+                      {LEVEL_LABEL[mark.level] ?? mark.level}
+                      {mark.maxPoints ? `（滿分 ${mark.maxPoints}）` : '（未設配分，不計入總分）'}
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ))}
         </div>
       )}
 
