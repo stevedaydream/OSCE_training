@@ -107,35 +107,50 @@ export const CORE_CHECKLIST = [
 export const CORE_CATEGORIES = [...new Set(CORE_CHECKLIST.map((c) => c.category))];
 
 /**
+ * 現行考試的四類配分比重。
+ *
+ * 這組數字**不是**公告規定的——公告完全沒有提到細項配分。
+ * 它來自使用者對現行甄審實況的認知：臨床推理與決策佔最重。
+ * 之所以要寫死在這裡，是因為考官端的「參考配時」是由配分佔比換算的，
+ * 比重錯了就會叫委員在最吃重的那一段少留時間，等於教錯節奏。
+ */
+export const CATEGORY_WEIGHTS = {
+  病史詢問: 15,
+  '身體評估（說做合一）': 25,
+  臨床推理與決策: 45,
+  溝通: 15,
+};
+
+/**
  * 評分表骨架：匯入的教學案例通常沒有附評分表，
  * 而沒有評分表就等於沒有片段特訓的段落、也沒辦法讓陪練委員打分。
  *
- * 這四條的措辭直接取自公告一、(一) 與一、(三) 的原文，沒有任何推論成分。
- * 配分一律留空——公告未規定細項配分，要填就依紙本填。
+ * 四條的措辭直接取自公告一、(一) 與一、(三) 的原文，沒有推論成分；
+ * 配分則套用上面的現行比重當起點，你可以在編輯器裡依實際紙本改。
  */
 export const RUBRIC_SKELETON = [
   {
     category: '病史詢問',
     title: '依病患主訴執行焦點式病史訪談',
-    maxPoints: null,
+    maxPoints: CATEGORY_WEIGHTS['病史詢問'],
     critical: true,
   },
   {
     category: '身體評估（說做合一）',
     title: '執行焦點式健康評估，並同時向病人說明檢查目的、項目及部位',
-    maxPoints: null,
+    maxPoints: CATEGORY_WEIGHTS['身體評估（說做合一）'],
     critical: true,
   },
   {
     category: '臨床推理與決策',
     title: '依評估結果向口試委員解釋病人可能的健康問題及理由',
-    maxPoints: null,
+    maxPoints: CATEGORY_WEIGHTS['臨床推理與決策'],
     critical: true,
   },
   {
     category: '溝通',
     title: '對病人解釋評估結果與下一步計畫或注意事項',
-    maxPoints: null,
+    maxPoints: CATEGORY_WEIGHTS['溝通'],
     critical: true,
   },
 ];
