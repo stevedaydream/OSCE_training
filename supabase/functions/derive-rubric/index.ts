@@ -8,6 +8,11 @@
  *
  * 配分依現行四類比重分配，同一類內部平均分——分類總分是已知的實況，
  * 但同類裡誰輕誰重屬於判斷，不是教案裡寫著的事實，留給人在編輯器裡調。
+ *
+ * ⚠️ 比重數字在下方 prompt 裡是**手抄的**：Edge Function 跑在 Deno，
+ * 吃不到前端的 `src/lib/constants.js`。改比重時三處要一起改——
+ * `constants.js` 的 CATEGORY_WEIGHTS、本檔的規則 3、`prompts/B_reasoning-to-station.md` 的規則 2。
+ *
  * 產出仍是草稿，station 維持未審核，必須經人工確認。
  */
 

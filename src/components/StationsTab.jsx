@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Camera, Plus, Pencil, Archive } from 'lucide-react';
+import { Camera, Plus, Pencil, Archive, ClipboardPaste } from 'lucide-react';
 import { supabase, callFunction } from '../lib/supabase';
 import { DEPARTMENT_NAME } from '../lib/constants';
 import StationEditor from './StationEditor';
@@ -20,6 +20,8 @@ export default function StationsTab() {
   const [editing, setEditing] = useState(null);
   const [importing, setImporting] = useState(false);
   const [error, setError] = useState('');
+  const [pasting, setPasting] = useState(false);
+  const [pastedJson, setPastedJson] = useState('');
   const fileInput = useRef(null);
 
   async function load() {
@@ -64,6 +66,42 @@ export default function StationsTab() {
     }
   }
 
+  /**
+   * 貼上 Prompt B 產出的 station JSON。
+   *
+   * 走這條路的題目來源是 AI（情境 → Prompt A 推理文件 → 人工審核 → Prompt B → 這裡），
+   * 所以 source 預設為 'ai'，與紙本 OCR 的 'ocr' 分開——紙本題的臨床內容有書背書，這一份沒有。
+   * 規矩與 OCR 相同：一律進編輯器逐項確認，不直接寫進題庫。
+   */
+  function handlePasteImport() {
+    // 模型很常在 JSON 外面包一層 ``` 圍欄，即使 prompt 說了不要。這裡直接容忍掉。
+    const text = pastedJson
+      .trim()
+      .replace(/^```(?:json)?\s*/i, '')
+      .replace(/```\s*$/, '')
+      .trim();
+
+    if (!text) return;
+    setError('');
+
+    let draft;
+    try {
+      draft = JSON.parse(text);
+    } catch {
+      setError('這不是有效的 JSON。請確認你貼的是 Prompt B 輸出的整段 { … }，前後沒有多複製到說明文字。');
+      return;
+    }
+
+    if (!draft || typeof draft !== 'object' || Array.isArray(draft)) {
+      setError('解析成功但最外層不是一個物件。Prompt B 的輸出應該長成 { "title": …, "doorSheet": … } 這樣。');
+      return;
+    }
+
+    setEditing(draftToStation({ ...draft, source: draft.source ?? 'ai' }));
+    setPastedJson('');
+    setPasting(false);
+  }
+
   async function archive(station) {
     await supabase.from('stations').update({ archived: true }).eq('id', station.id);
     load();
@@ -86,13 +124,16 @@ export default function StationsTab() {
     <div className="page">
       <div className="card">
         <div className="card-title">
-          <h3>把紙本考題匯入</h3>
-          <span className="hint">口試題官方不公開，這裡的來源是你手上的紙本</span>
+          <h3>把考題匯入</h3>
+          <span className="hint">口試題官方不公開，來源是你手上的紙本或自製題</span>
         </div>
 
         <p className="muted" style={{ marginBottom: '0.9rem' }}>
-          拍下考題或評分表（一題可以多張），系統只負責把紙上寫的抄進欄位，不會自己補內容。
-          抄完一定會進編輯器等你逐項確認——臨床正確性由你背書，不由 AI 背書。
+          <strong>拍照</strong>：拍下考題或評分表（一題可以多張），系統只負責把紙上寫的抄進欄位，不會自己補內容。
+          <br />
+          <strong>貼上 JSON</strong>：從情境自製的題目（見 <code>prompts/</code> 的兩段式流程）。
+          <br />
+          兩條路都一定會進編輯器等你逐項確認——臨床正確性由你背書，不由 AI 背書。
         </p>
 
         <input
@@ -115,11 +156,61 @@ export default function StationsTab() {
             {importing ? '辨識中…' : '拍照／選圖匯入'}
           </button>
 
+          <button
+            type="button"
+            className="btn"
+            onClick={() => {
+              setPasting((open) => !open);
+              setError('');
+            }}
+          >
+            <ClipboardPaste size={16} />
+            貼上 JSON 匯入
+          </button>
+
           <button type="button" className="btn" onClick={() => setEditing('new')}>
             <Plus size={16} />
             手動新增一題
           </button>
         </div>
+
+        {pasting && (
+          <div style={{ marginTop: '0.9rem' }}>
+            <p className="muted" style={{ marginBottom: '0.5rem' }}>
+              貼上 <code>prompts/B_reasoning-to-station.md</code> 產出的整段 JSON。
+              來源會標成「AI 生成」，與紙本 OCR 分開——<strong>紙本題的臨床內容有書背書，這一份沒有</strong>。
+              一樣會進編輯器等你逐項確認。
+            </p>
+            <textarea
+              className="textarea"
+              rows={10}
+              value={pastedJson}
+              placeholder={'{\n  "title": "…",\n  "doorSheet": { … },\n  "cueCards": [ … ],\n  "rubricItems": [ … ]\n}'}
+              onChange={(event) => setPastedJson(event.target.value)}
+            />
+            <div className="row" style={{ marginTop: '0.6rem' }}>
+              <button
+                type="button"
+                className="btn btn-primary"
+                disabled={!pastedJson.trim()}
+                onClick={handlePasteImport}
+              >
+                解析並開啟編輯器
+              </button>
+              <button
+                type="button"
+                className="btn btn-ghost"
+                onClick={() => {
+                  setPasting(false);
+                  setPastedJson('');
+                  setError('');
+                }}
+              >
+                取消
+              </button>
+            </div>
+          </div>
+        )}
 
         {error && <div className="notice notice-danger" style={{ marginTop: '0.9rem' }}>{error}</div>}
       </div>
