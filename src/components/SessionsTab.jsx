@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from 'react';
-import { RefreshCw, TrendingDown } from 'lucide-react';
+import { RefreshCw, TrendingDown, Archive } from 'lucide-react';
 import { supabase, callFunction } from '../lib/supabase';
 import { CORE_CHECKLIST } from '../lib/constants';
 import { formatDate, formatScore, humanDuration } from '../lib/format';
@@ -30,11 +30,31 @@ export default function SessionsTab() {
     const { data, error: loadError } = await supabase
       .from('sessions')
       .select('*')
+      .eq('archived', false)
       .order('created_at', { ascending: false })
       .limit(100);
     if (loadError) setError(loadError.message);
     setSessions(data ?? []);
     setLoading(false);
+  }
+
+  /**
+   * 封存一場演練。軟刪除，不是真的刪掉。
+   *
+   * 用軟刪除的理由：這一場可能有陪練委員送的分數，硬刪就永遠拿不回來。
+   * 封存的語意是「這場不算數」——列表不顯示，也不計入下方的「反覆漏掉」排行榜
+   * （因為 leaderboard 是從 sessions 這個 state 算的，而它已經被 archived 濾掉了）。
+   */
+  async function archive(session) {
+    const { error: archiveError } = await supabase
+      .from('sessions')
+      .update({ archived: true })
+      .eq('id', session.id);
+    if (archiveError) {
+      setError(archiveError.message);
+      return;
+    }
+    load();
   }
 
   useEffect(() => {
@@ -216,6 +236,15 @@ export default function SessionsTab() {
                   {retrying === session.id ? '分析中…' : '重試分析'}
                 </button>
               )}
+
+              <button
+                type="button"
+                className="btn btn-ghost"
+                title="封存這場（不會刪除，只是不再列出）"
+                onClick={() => archive(session)}
+              >
+                <Archive size={15} />
+              </button>
             </div>
           ))
         )}

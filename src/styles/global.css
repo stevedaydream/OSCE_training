@@ -348,6 +348,87 @@ select {
   gap: 1rem;
 }
 
+/* 出題頁：左邊流程、右邊兩段 prompt。窄螢幕時流程掉到上面。 */
+.build-layout {
+  display: grid;
+  grid-template-columns: minmax(0, 320px) minmax(0, 1fr);
+  gap: 1rem;
+  align-items: start;
+}
+
+@media (max-width: 900px) {
+  .build-layout {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* 流程的步驟清單。人工審核那兩關要看得出來跟其他步驟不同。 */
+.flow-step {
+  display: flex;
+  gap: 0.7rem;
+  padding: 0.6rem 0;
+  border-top: 1px solid var(--border);
+}
+
+.flow-step:first-of-type {
+  border-top: 0;
+}
+
+.flow-num {
+  flex: 0 0 1.6rem;
+  height: 1.6rem;
+  border-radius: 999px;
+  display: grid;
+  place-items: center;
+  font-size: 0.8rem;
+  font-weight: 700;
+  background: var(--surface-2);
+  color: var(--text-dim);
+}
+
+/* --warn 在淺色是深琥珀、深色是亮琥珀，所以用它當文字與邊框而不是填充背景，
+   兩個主題的對比才都站得住。 */
+.flow-step.is-gate .flow-num {
+  background: transparent;
+  border: 1.5px solid var(--warn);
+  color: var(--warn);
+}
+
+.flow-step.is-gate .flow-body strong {
+  color: var(--warn);
+}
+
+.flow-body {
+  min-width: 0;
+}
+
+.flow-body strong {
+  display: block;
+  font-size: 0.93rem;
+}
+
+.flow-body span {
+  color: var(--text-dim);
+  font-size: 0.82rem;
+  line-height: 1.5;
+}
+
+/* prompt 全文預覽：等寬、可捲、不撐爆版面。 */
+.prompt-preview {
+  max-height: 22rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.78rem;
+  line-height: 1.6;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  border-radius: 0.5rem;
+  padding: 0.8rem;
+  margin-top: 0.6rem;
+}
+
 .muted {
   color: var(--text-dim);
   font-size: 0.88rem;

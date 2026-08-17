@@ -93,6 +93,47 @@ Realtime 頻道仍開著，晚到的評分會即時寫回資料庫並更新已�
 報告一律可開啟，不限 `status = 'analyzed'`——沒有逐字稿的場次仍可能有委員評分，
 只准已分析的場次開報告等於把分數鎖在裡面拿不出來。
 
+### 場次只能封存，不能刪
+
+`sessions.archived` 是軟刪除，比照 `stations.archived`。**沒有硬刪的入口，這是刻意的**——
+一場演練裡可能有陪練委員送的分數，硬刪就永遠拿不回來。
+封存的語意是「這場不算數」：列表不列出，也不計入「反覆漏掉」排行榜
+（排行榜是從已經濾掉 archived 的 state 算的，不必另外處理）。
+
+## 推理速練與正式演練，練的是不同東西
+
+**分段練習**（`mode: 'segment'`）是「同一套流程，時間縮短 ＋ 檢核只看一類」——
+仍然要錄音、仍然要等 Gemini 轉逐字稿。它練的是**表達**。
+
+但逐字稿只能告訴你「有沒有講出第三個診斷」，**不能告訴你「你的第三個診斷放錯了」**。
+而且每輪要等分析，做不到密集。
+
+所以另立**推理速練**（`DrillTab`）：看情境 → 打字填三格 → 對答案自評。一輪兩三分鐘，
+不錄音、不呼叫任何 API。**它練的是內容。**
+
+> **順序不能顛倒：內容還會錯的時候練口說，只會把錯的答案講得很流利。**
+
+### 速練的三個設計決定
+
+- **題庫直接讀 `prompts/samples/stations/*.md`**，不另抄一份進資料庫——
+  第 1 節就是題目、第 7 節就是三格答案。用 `import.meta.glob` 動態載入，
+  21 份各自切成獨立 chunk（24–32 KB），不進主 bundle。
+- **自評，不用 AI 評分。** 密集練的瓶頸就是回饋延遲，AI 評分會把它加回來。
+  而且答案有層次，「接不接近」由她判斷比模型準。
+- **紀錄存 localStorage 不進 Supabase。** 純個人速練資料，不需跨裝置、不值得開一張表。
+  正式演練的成績才進資料庫。
+
+### 排行榜只統計第三格
+
+①②答錯多半是知識不足，多讀就好；**③ 想不出來是思維習慣的問題**——
+想不到「還有什麼漏掉會出事」，那是跨題目可以累積的東西。
+
+### 一個不能省的警告
+
+那 21 份**沒有經過人工審核**。所以速練頁每一題都顯示這一點，
+而且對答案時**強制一併顯示第 9 節「模型自己不確定的地方」**——
+否則她會把模型不確定的東西當標準答案背下來。
+
 ### 檢核分兩層
 
 - **通用骨架**（`CORE_CHECKLIST`，18 項，四大分類直接對應公告一、(一)）：
@@ -124,7 +165,9 @@ Realtime 頻道仍開著，晚到的評分會即時寫回資料庫並更新已�
 | 陪練考官端 | `src/components/CoachView.jsx` |
 | 報告 | `src/components/SessionReport.jsx` |
 | 紀錄與反覆漏掉排行榜 | `src/components/SessionsTab.jsx` |
-| 題庫編輯器 / OCR 匯入 | `src/components/StationEditor.jsx`、`StationsTab.jsx` |
+| 題庫編輯器 / OCR 匯入 / 貼上 JSON 匯入 | `src/components/StationEditor.jsx`、`StationsTab.jsx` |
+| 出題頁（兩段 prompt ＋ 流程） | `src/components/BuildTab.jsx` |
+| 推理速練（三格快答） | `src/components/DrillTab.jsx`、`src/lib/drillDeck.js` |
 | 逐字稿與檢核（Gemini） | `supabase/functions/analyze-session/` |
 | 紙本考題 OCR | `supabase/functions/ocr-station/` |
 | 評分表重組草稿 | `supabase/functions/derive-rubric/` |
@@ -180,6 +223,14 @@ OCR 產出一律標「未審核」，必須人工逐項確認後才能轉「已�
 
 拆成兩段是為了讓**發明只發生一次**：A 產出的臨床事實由人審一次，
 B 之後每一條評分項都能回溯到 A 的原文。混在一份 prompt 裡就分不出哪條有依據。
+
+**怎麼跑**：App 的「出題」分頁（`BuildTab.jsx`）。兩段 prompt 直接顯示在頁面上，
+貼入情境後按「複製整段 Prompt」拿去餵外部 AI，旁邊列出六步驟流程並標出**兩道人工關卡**。
+
+> ⚠️ **prompt 內容用 Vite 的 `?raw` 讀自 `prompts/*.md`，頁面不另存一份。**
+> 剛因為 `CATEGORY_WEIGHTS` 手抄三處踩過坑——prompt 一旦有兩份，改了一份忘了另一份，
+> 畫面就會教錯東西。切法是 `raw.split(/^---$/m)[1]`，兩份 md 的結構都固定是
+> 說明 →`---`→ 本體 →`---`→ 使用後必做（表格裡的 `| :--- |` 不是獨立成行，不會誤切）。
 
 **怎麼進系統**：`StationsTab` 的「貼上 JSON 匯入」按鈕。
 B 的輸出形狀當初就是照 `draftToStation()` 設計的，所以貼進去直接轉得動；

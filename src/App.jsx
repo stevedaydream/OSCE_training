@@ -7,11 +7,15 @@ import CoachView from './components/CoachView';
 import PracticeTab from './components/PracticeTab';
 import StationsTab from './components/StationsTab';
 import SessionsTab from './components/SessionsTab';
+import BuildTab from './components/BuildTab';
+import DrillTab from './components/DrillTab';
 import ThemeToggle from './components/ThemeToggle';
 
 const TABS = [
   { id: 'practice', label: '演練' },
+  { id: 'drill', label: '速練' },
   { id: 'stations', label: '題庫' },
+  { id: 'build', label: '出題' },
   { id: 'sessions', label: '紀錄' },
 ];
 
@@ -107,7 +111,9 @@ function HostApp() {
       </header>
 
       {tab === 'practice' && <PracticeTab />}
+      {tab === 'drill' && <DrillTab />}
       {tab === 'stations' && <StationsTab />}
+      {tab === 'build' && <BuildTab />}
       {tab === 'sessions' && <SessionsTab />}
     </div>
   );
